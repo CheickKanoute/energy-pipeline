@@ -27,7 +27,7 @@ def run(spark: SparkSession):
 
     # 2. Référentiel des sites : fichier préfixé par "_", que Spark ignore quand on
     #    pointe le dossier -> on le lit en le nommant explicitement.
-    sites = spark.read.parquet(f"{VOLUME_RAW}/_site_reference.parquet")
+   sites = spark.read.parquet(f"{VOLUME_RAW}/site_reference.parquet")
     (sites.write.format("delta").mode("overwrite")
        .option("path", f"{BUCKET}/bronze/site_reference/")
        .option("overwriteSchema", "true")
