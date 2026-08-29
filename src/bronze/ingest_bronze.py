@@ -9,7 +9,7 @@ Deux tables produites :
   - bronze_smart_meters : les 14,4M mesures
   - site_reference      : le référentiel des 5000 sites (dimension)
 """
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, functions as F
 
 CATALOG = "energy_pipeline_ws"
 SCHEMA = "raw"
@@ -18,9 +18,11 @@ VOLUME_RAW = f"/Volumes/{CATALOG}/{SCHEMA}/smart_meters"
 
 
 def run(spark: SparkSession):
-    # 1. Mesures : on ne lit que les partitions year=.../month=.../day=...
-    #    (le "year=*" exclut le fichier site_reference.parquet posé a la racine)
-    df = spark.read.parquet(f"{VOLUME_RAW}/year=*/")
+    # 1. Mesures : on ne lit que les partitions (year=* exclut le referentiel a la
+    #    racine), puis on reconstruit la colonne year a partir du timestamp — car
+    #    lire "year=*/" descend dans les dossiers et fait perdre cette colonne.
+    df = (spark.read.parquet(f"{VOLUME_RAW}/year=*/")
+          .withColumn("year", F.year("reading_ts")))
     (df.write.format("delta").mode("overwrite")
        .option("path", f"{BUCKET}/bronze/smart_meters/")
        .option("overwriteSchema", "true")
