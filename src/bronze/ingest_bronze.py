@@ -25,9 +25,8 @@ def run(spark: SparkSession):
        .option("overwriteSchema", "true")
        .saveAsTable(f"{CATALOG}.{SCHEMA}.bronze_smart_meters"))
 
-    # 2. Référentiel des sites : fichier préfixé par "_", que Spark ignore quand on
-    #    pointe le dossier -> on le lit en le nommant explicitement.
-   sites = spark.read.parquet(f"{VOLUME_RAW}/site_reference.parquet")
+    # 2. Referentiel des sites (copie sans le prefixe "_" cote S3 pour que Spark le lise)
+    sites = spark.read.parquet(f"{VOLUME_RAW}/site_reference.parquet")
     (sites.write.format("delta").mode("overwrite")
        .option("path", f"{BUCKET}/bronze/site_reference/")
        .option("overwriteSchema", "true")
