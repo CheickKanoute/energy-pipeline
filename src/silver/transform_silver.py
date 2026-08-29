@@ -6,7 +6,8 @@ Couche Silver — nettoyage, déduplication, enrichissement.
 - Déduplication : une seule ligne par (site_id, reading_ts).
 - Enrichissement : jointure avec le référentiel des sites (broadcast, petite dimension).
 """
-from pyspark.sql import SparkSession, functions as F, Window
+from pyspark.sql import SparkSession, Window
+from pyspark.sql import functions as F
 
 CATALOG = "energy_pipeline_ws"
 SCHEMA = "raw"

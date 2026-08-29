@@ -7,9 +7,9 @@ stage), pas la sophistication du modèle.
 """
 import mlflow
 import mlflow.xgboost
-from xgboost import XGBRegressor
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.model_selection import train_test_split
+from xgboost import XGBRegressor
 
 CATALOG = "energy"
 EXPERIMENT_NAME = "/Shared/energy_consumption_forecast"

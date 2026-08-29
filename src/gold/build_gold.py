@@ -5,7 +5,8 @@ Deux tables :
   - gold_consumption_hourly : consommation agrégée par site et par heure (reporting)
   - gold_forecast_features  : features temporelles (lags, moyenne mobile) pour la prévision
 """
-from pyspark.sql import SparkSession, functions as F, Window
+from pyspark.sql import SparkSession, Window
+from pyspark.sql import functions as F
 
 CATALOG = "energy_pipeline_ws"
 SCHEMA = "raw"

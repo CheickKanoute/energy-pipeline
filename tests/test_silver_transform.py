@@ -3,7 +3,7 @@ Tests unitaires des transformations Silver, exécutables en local (pas besoin de
 Databricks) via un SparkSession local — c'est ce que la CI GitHub Actions exécute à chaque PR.
 """
 import pytest
-from pyspark.sql import SparkSession, Row
+from pyspark.sql import Row, SparkSession
 
 
 @pytest.fixture(scope="module")
@@ -31,7 +31,8 @@ def test_invalid_consumption_is_filtered(spark):
 
 
 def test_deduplication_keeps_latest_ingestion(spark):
-    from pyspark.sql import functions as F, Window
+    from pyspark.sql import Window
+    from pyspark.sql import functions as F
 
     df = spark.createDataFrame([
         Row(site_id="A", reading_ts="2026-01-01T00:00:00", consumption_kw=5.0, _ingested_at=1),

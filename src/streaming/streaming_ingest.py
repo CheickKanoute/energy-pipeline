@@ -10,7 +10,8 @@ Deux façons de tester ça en conditions de charge sans vrai flux IoT :
 Ici : option 1, pour se concentrer sur le comportement du moteur streaming
 (watermarking, fenêtrage, backpressure) indépendamment du débit d'écriture S3.
 """
-from pyspark.sql import SparkSession, functions as F
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 CATALOG = "energy"
 

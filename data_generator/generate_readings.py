@@ -25,9 +25,9 @@ Volumétrie indicative :
 """
 import argparse
 import os
+
 import numpy as np
 import pandas as pd
-
 
 SITE_TYPES = ["résidentiel", "tertiaire", "industriel"]
 SITE_TYPE_WEIGHTS = [0.75, 0.20, 0.05]
