@@ -19,7 +19,7 @@ VOLUME_RAW = f"/Volumes/{CATALOG}/{SCHEMA}/smart_meters"
 
 def run(spark: SparkSession):
     # 1. Mesures : lecture des partitions Parquet depuis le Volume gouverné
-    df = spark.read.parquet(f"{VOLUME_RAW}/")
+   df = spark.read.parquet(f"{VOLUME_RAW}/year=*/")
     (df.write.format("delta").mode("overwrite")
        .option("path", f"{BUCKET}/bronze/smart_meters/")
        .option("overwriteSchema", "true")
