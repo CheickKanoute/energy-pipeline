@@ -1,0 +1,9 @@
+pyspark==3.5.1
+delta-spark==3.2.0
+mlflow==2.16.0
+xgboost==2.1.1
+scikit-learn==1.5.1
+great-expectations==0.18.19
+pandas==2.2.2
+numpy==1.26.4
+pyarrow==17.0.0
