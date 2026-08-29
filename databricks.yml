@@ -1,32 +1,20 @@
-# Databricks Asset Bundle — déploiement du pipeline energy-pipeline
-# Doc: https://docs.databricks.com/dev-tools/bundles/index.html
+# Databricks Asset Bundle — pipeline energy-pipeline
+# Déploie un job orchestrant Bronze -> Silver -> Gold sur le workspace.
 
 bundle:
   name: energy-pipeline
-
-variables:
-  catalog:
-    default: energy
 
 targets:
   dev:
     mode: development
     default: true
     workspace:
-      host: https://<votre-workspace>.cloud.databricks.com
-    resources:
-      jobs:
-        energy_pipeline_job:
-          name: "[dev] energy-pipeline"
+      host: https://dbc-7c96154f-f66f.cloud.databricks.com
 
   prod:
     mode: production
     workspace:
-      host: https://<votre-workspace>.cloud.databricks.com
-    resources:
-      jobs:
-        energy_pipeline_job:
-          name: "energy-pipeline"
+      host: https://dbc-7c96154f-f66f.cloud.databricks.com
 
 resources:
   jobs:
@@ -36,10 +24,9 @@ resources:
         - job_cluster_key: main_cluster
           new_cluster:
             spark_version: "15.4.x-scala2.12"
-            node_type_id: "i3.xlarge"       # adapter selon le cloud (AWS ici)
-            autoscale:
-              min_workers: 2
-              max_workers: 12               # dimensionné pour tenir un backlog large
+            node_type_id: "m5d.large"
+            num_workers: 1
+            data_security_mode: "SINGLE_USER"   # requis pour Unity Catalog
             spark_conf:
               spark.databricks.delta.optimizeWrite.enabled: "true"
               spark.databricks.delta.autoCompact.enabled: "true"
@@ -51,23 +38,20 @@ resources:
             python_file: ./src/bronze/ingest_bronze.py
 
         - task_key: silver_transform
-          depends_on: [{task_key: bronze_ingest}]
+          depends_on:
+            - task_key: bronze_ingest
           job_cluster_key: main_cluster
           spark_python_task:
             python_file: ./src/silver/transform_silver.py
 
         - task_key: gold_build
-          depends_on: [{task_key: silver_transform}]
+          depends_on:
+            - task_key: silver_transform
           job_cluster_key: main_cluster
           spark_python_task:
             python_file: ./src/gold/build_gold.py
 
-        - task_key: train_forecast
-          depends_on: [{task_key: gold_build}]
-          job_cluster_key: main_cluster
-          spark_python_task:
-            python_file: ./src/mlops/train_forecast.py
-
       schedule:
-        quartz_cron_expression: "0 0 3 * * ?"   # tous les jours à 3h
+        quartz_cron_expression: "0 0 3 * * ?"   # tous les jours à 3h (Europe/Paris)
         timezone_id: "Europe/Paris"
+        pause_status: "PAUSED"                    # démarré en pause — à activer manuellement
