@@ -1,51 +1,41 @@
 """
-Ingestion Bronze — Databricks Auto Loader depuis S3.
+Couche Bronze — ingestion des données brutes de compteurs vers une table Delta.
 
-Points volumétrie à démontrer en entretien :
-- Auto Loader (cloudFiles) plutôt qu'un simple spark.read : découverte incrémentale
-  des fichiers via notification S3 (SQS) au lieu du listing complet — indispensable
-  dès que le raw contient des dizaines de milliers de fichiers.
-- schemaEvolutionMode="addNewColumns" + schemaLocation pour survivre à l'ajout de
-  colonnes côté source sans casser le pipeline.
-- maxFilesPerTrigger pour contrôler la taille des micro-batchs et éviter un cluster
-  sous-dimensionné qui OOM sur un backlog important.
+Lit les fichiers Parquet du raw (exposés via un Volume Unity Catalog) et les
+matérialise en table Delta externe, sans transformation : Bronze est une copie
+fidèle et immuable du raw, anomalies comprises. Le nettoyage est le travail de Silver.
+
+Deux tables produites :
+  - bronze_smart_meters : les 14,4M mesures
+  - site_reference      : le référentiel des 5000 sites (dimension)
 """
-from pyspark.sql import SparkSession, functions as F
+from pyspark.sql import SparkSession
 
-CATALOG = "energy"
-SCHEMA = "bronze"
-TABLE = "smart_meter_readings"
-
-RAW_PATH = "s3://energy-pipeline-demo/raw/smart-meters/"
-CHECKPOINT_PATH = "s3://energy-pipeline-demo/checkpoints/bronze_smart_meters/"
-SCHEMA_LOCATION = "s3://energy-pipeline-demo/schemas/bronze_smart_meters/"
+CATALOG = "energy_pipeline_ws"
+SCHEMA = "raw"
+BUCKET = "s3://energy-pipeline-ckanoute"
+VOLUME_RAW = f"/Volumes/{CATALOG}/{SCHEMA}/smart_meters"
 
 
 def run(spark: SparkSession):
-    spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG}")
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
+    # 1. Mesures : lecture des partitions Parquet depuis le Volume gouverné
+    df = spark.read.parquet(f"{VOLUME_RAW}/")
+    (df.write.format("delta").mode("overwrite")
+       .option("path", f"{BUCKET}/bronze/smart_meters/")
+       .option("overwriteSchema", "true")
+       .saveAsTable(f"{CATALOG}.{SCHEMA}.bronze_smart_meters"))
 
-    df = (
-        spark.readStream.format("cloudFiles")
-        .option("cloudFiles.format", "parquet")
-        .option("cloudFiles.schemaLocation", SCHEMA_LOCATION)
-        .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
-        .option("cloudFiles.maxFilesPerTrigger", 1000)  # ajuster selon la taille du cluster
-        .load(RAW_PATH)
-        .withColumn("_ingested_at", F.current_timestamp())
-        .withColumn("_source_file", F.input_file_name())
-    )
+    # 2. Référentiel des sites : fichier préfixé par "_", que Spark ignore quand on
+    #    pointe le dossier -> on le lit en le nommant explicitement.
+    sites = spark.read.parquet(f"{VOLUME_RAW}/_site_reference.parquet")
+    (sites.write.format("delta").mode("overwrite")
+       .option("path", f"{BUCKET}/bronze/site_reference/")
+       .option("overwriteSchema", "true")
+       .saveAsTable(f"{CATALOG}.{SCHEMA}.site_reference"))
 
-    query = (
-        df.writeStream.format("delta")
-        .option("checkpointLocation", CHECKPOINT_PATH)
-        .option("mergeSchema", "true")
-        .trigger(availableNow=True)  # batch incrémental — passer à processingTime="5 minutes" en continu
-        .toTable(f"{CATALOG}.{SCHEMA}.{TABLE}")
-    )
-    query.awaitTermination()
+    print("Bronze OK : bronze_smart_meters + site_reference")
 
 
 if __name__ == "__main__":
-    spark = SparkSession.builder.appName("bronze_ingest_smart_meters").getOrCreate()
+    spark = SparkSession.builder.getOrCreate()
     run(spark)

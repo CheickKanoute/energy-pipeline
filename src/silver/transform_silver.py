@@ -1,68 +1,55 @@
 """
-Transformation Silver — nettoyage, déduplication, jointure référentiel, merge Delta.
+Couche Silver — nettoyage, déduplication, enrichissement.
 
-Points volumétrie à démontrer en entretien :
-- MERGE INTO plutôt qu'un overwrite complet : indispensable dès que Bronze contient
-  des mois d'historique — on ne veut réécrire que les partitions concernées.
-- Dédup par fenêtre (row_number) sur (site_id, reading_ts) avant le merge, pour
-  gérer les doublons liés aux retries d'ingestion.
-- Broadcast join explicite sur le référentiel sites (petite dimension) pour éviter
-  un shuffle inutile sur une table de faits qui peut peser plusieurs To.
-- Partitionnement par date (year/month/day) hérité de Bronze, cohérent avec les
-  requêtes downstream (agrégats journaliers/horaires).
+- Filtrage qualité : on isole les mesures valides (non nulles, positives, < 500 kW).
+  Les lignes rejetées sont conservées dans une table dédiée (traçabilité).
+- Déduplication : une seule ligne par (site_id, reading_ts).
+- Enrichissement : jointure avec le référentiel des sites (broadcast, petite dimension).
 """
 from pyspark.sql import SparkSession, functions as F, Window
-from delta.tables import DeltaTable
 
-CATALOG = "energy"
+CATALOG = "energy_pipeline_ws"
+SCHEMA = "raw"
+BUCKET = "s3://energy-pipeline-ckanoute"
 
 
 def run(spark: SparkSession):
-    bronze = spark.table(f"{CATALOG}.bronze.smart_meter_readings")
-    sites_ref = spark.table(f"{CATALOG}.bronze.site_reference")  # petite table (dimension)
+    bronze = spark.table(f"{CATALOG}.{SCHEMA}.bronze_smart_meters")
+    sites = spark.table(f"{CATALOG}.{SCHEMA}.site_reference")
 
-    # 1. Filtrage qualité : on isole plutôt qu'on supprime silencieusement
-    #    (traçabilité — un vrai client demandera toujours "où sont passées mes lignes rejetées ?")
+    # 1. Filtrage qualité
     valid = bronze.filter(
-        F.col("consumption_kw").isNotNull() & (F.col("consumption_kw") >= 0) & (F.col("consumption_kw") < 500)
+        F.col("consumption_kw").isNotNull() &
+        (F.col("consumption_kw") >= 0) &
+        (F.col("consumption_kw") < 500)
     )
+
+    # Lignes rejetées, tracées à part
     rejected = bronze.subtract(valid)
-    rejected.write.mode("append").saveAsTable(f"{CATALOG}.silver.rejected_readings")
+    (rejected.write.format("delta").mode("overwrite")
+       .option("path", f"{BUCKET}/silver/rejected/")
+       .option("overwriteSchema", "true")
+       .saveAsTable(f"{CATALOG}.{SCHEMA}.silver_rejected"))
 
-    # 2. Déduplication par fenêtre — garde la dernière ingestion en cas de doublon
-    w = Window.partitionBy("site_id", "reading_ts").orderBy(F.col("_ingested_at").desc())
-    deduped = (
-        valid.withColumn("_rn", F.row_number().over(w))
+    # 2. Déduplication par fenêtre
+    w = Window.partitionBy("site_id", "reading_ts").orderBy(F.col("consumption_kw"))
+    deduped = (valid
+        .withColumn("_rn", F.row_number().over(w))
         .filter(F.col("_rn") == 1)
-        .drop("_rn")
-    )
+        .drop("_rn"))
 
-    # 3. Jointure référentiel avec broadcast explicite (dimension petite)
-    enriched = deduped.join(F.broadcast(sites_ref), on="site_id", how="left")
+    # 3. Enrichissement (broadcast join sur la dimension sites)
+    enriched = deduped.join(F.broadcast(sites), on="site_id", how="left")
 
-    # 4. Merge idempotent — ne réécrit que les partitions touchées
-    target_table = f"{CATALOG}.silver.smart_meter_readings"
-    if spark.catalog.tableExists(target_table):
-        target = DeltaTable.forName(spark, target_table)
-        (
-            target.alias("t")
-            .merge(enriched.alias("s"), "t.site_id = s.site_id AND t.reading_ts = s.reading_ts")
-            .whenMatchedUpdateAll()
-            .whenNotMatchedInsertAll()
-            .execute()
-        )
-    else:
-        (
-            enriched.write.format("delta")
-            .partitionBy("year", "month", "day")
-            .saveAsTable(target_table)
-        )
+    (enriched.write.format("delta").mode("overwrite")
+       .option("path", f"{BUCKET}/silver/smart_meters/")
+       .option("overwriteSchema", "true")
+       .partitionBy("year", "month", "day")
+       .saveAsTable(f"{CATALOG}.{SCHEMA}.silver_smart_meters"))
 
-    # 5. Maintenance — Z-Ordering sur la colonne de filtrage la plus fréquente (site_id)
-    #    à planifier périodiquement (pas à chaque run), typiquement une fois par jour.
-    spark.sql(f"OPTIMIZE {target_table} ZORDER BY (site_id)")
+    print("Silver OK : silver_smart_meters + silver_rejected")
 
 
 if __name__ == "__main__":
-    spark = SparkSession.builder.appName("silver_transform_smart_meters").getOrCreate()
+    spark = SparkSession.builder.getOrCreate()
     run(spark)
