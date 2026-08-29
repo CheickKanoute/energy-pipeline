@@ -9,7 +9,8 @@ Deux tables produites :
   - bronze_smart_meters : les 14,4M mesures
   - site_reference      : le référentiel des 5000 sites (dimension)
 """
-from pyspark.sql import SparkSession, functions as F
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 CATALOG = "energy_pipeline_ws"
 SCHEMA = "raw"
