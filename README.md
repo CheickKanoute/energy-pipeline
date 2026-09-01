@@ -11,7 +11,7 @@ Conçu pour se préparer à une mission type "Ingénieur Data Databricks AWS/Azu
 
 Le projet est pensé pour être testé à deux échelles :
 - **Échelle dev/local** : ~1 à 5 millions de lignes, pour itérer vite (quelques minutes).
-- **Échelle "client"** : 500M à plusieurs milliards de lignes simulant plusieurs
+- **Échelle "client"** : 200M à plusieurs milliards de lignes simulant plusieurs
   millions de compteurs sur plusieurs mois à fréquence horaire/15min. C'est cette
   échelle qui force à traiter les vrais sujets clients : partitionnement, skew,
   Z-Ordering, dimensionnement de clusters, coûts (FinOps), et Auto Loader avec
